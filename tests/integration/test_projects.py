@@ -93,7 +93,8 @@ def test_get_private_project_by_slug(client):
 
 
 def test_create_project(client):
-    user = f.create_user()
+    # devsstream addition: project creation is admin-only now.
+    user = f.create_user(is_superuser=True)
     url = reverse("projects-list")
     data = {"name": "project name", "description": "project description"}
 
@@ -104,7 +105,7 @@ def test_create_project(client):
 
 
 def test_create_private_project_without_enough_private_projects_slots(client):
-    user = f.create_user(max_private_projects=0)
+    user = f.create_user(max_private_projects=0, is_superuser=True)
     url = reverse("projects-list")
     data = {
         "name": "project name",
@@ -122,7 +123,7 @@ def test_create_private_project_without_enough_private_projects_slots(client):
 
 
 def test_create_public_project_without_enough_public_projects_slots(client):
-    user = f.create_user(max_public_projects=0)
+    user = f.create_user(max_public_projects=0, is_superuser=True)
     url = reverse("projects-list")
     data = {
         "name": "project name",
@@ -176,7 +177,7 @@ def test_change_project_from_public_to_private_without_enough_private_projects_s
 
 
 def test_create_private_project_with_enough_private_projects_slots(client):
-    user = f.create_user(max_private_projects=1)
+    user = f.create_user(max_private_projects=1, is_superuser=True)
     url = reverse("projects-list")
     data = {
         "name": "project name",
@@ -191,7 +192,7 @@ def test_create_private_project_with_enough_private_projects_slots(client):
 
 
 def test_create_public_project_with_enough_public_projects_slots(client):
-    user = f.create_user(max_public_projects=1)
+    user = f.create_user(max_public_projects=1, is_superuser=True)
     url = reverse("projects-list")
     data = {
         "name": "project name",
@@ -3110,3 +3111,30 @@ def test_patch_project_code_superuser_can_clear_it_to_blank(client):
     # (must be stored as NULL, not "").
     other_project = f.create_project()
     assert other_project.project_code is None
+
+
+######################################################
+# admin-only project creation (devsstream addition)
+######################################################
+
+def test_create_project_as_superuser_succeeds(client):
+    user = f.create_user(is_superuser=True)
+    url = reverse("projects-list")
+    data = {"name": "admin project", "description": "description"}
+
+    client.login(user)
+    response = client.json.post(url, json.dumps(data))
+
+    assert response.status_code == 201
+
+
+def test_create_project_as_regular_authenticated_user_is_forbidden(client):
+    user = f.create_user(is_superuser=False)
+    url = reverse("projects-list")
+    data = {"name": "regular user project", "description": "description"}
+
+    client.login(user)
+    response = client.json.post(url, json.dumps(data))
+
+    assert response.status_code == 403
+    assert Project.objects.filter(name="regular user project").count() == 0
