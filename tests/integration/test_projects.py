@@ -93,10 +93,11 @@ def test_get_private_project_by_slug(client):
 
 
 def test_create_project(client):
-    # devsstream addition: project creation is admin-only now.
+    # devsstream addition: project creation is admin-only, and project_code
+    # is required at creation now.
     user = f.create_user(is_superuser=True)
     url = reverse("projects-list")
-    data = {"name": "project name", "description": "project description"}
+    data = {"name": "project name", "description": "project description", "project_code": "PRJ"}
 
     client.login(user)
     response = client.json.post(url, json.dumps(data))
@@ -110,7 +111,8 @@ def test_create_private_project_without_enough_private_projects_slots(client):
     data = {
         "name": "project name",
         "description": "project description",
-        "is_private": True
+        "is_private": True,
+        "project_code": "PRJ",
     }
 
     client.login(user)
@@ -128,7 +130,8 @@ def test_create_public_project_without_enough_public_projects_slots(client):
     data = {
         "name": "project name",
         "description": "project description",
-        "is_private": False
+        "is_private": False,
+        "project_code": "PRJ",
     }
 
     client.login(user)
@@ -182,7 +185,8 @@ def test_create_private_project_with_enough_private_projects_slots(client):
     data = {
         "name": "project name",
         "description": "project description",
-        "is_private": True
+        "is_private": True,
+        "project_code": "PRJ",
     }
 
     client.login(user)
@@ -197,7 +201,8 @@ def test_create_public_project_with_enough_public_projects_slots(client):
     data = {
         "name": "project name",
         "description": "project description",
-        "is_private": False
+        "is_private": False,
+        "project_code": "PRJ",
     }
 
     client.login(user)
@@ -623,6 +628,7 @@ def test_create_and_use_template(client):
         "name": "test project based on template",
         "description": "test project based on template",
         "creation_template": template_id,
+        "project_code": "TPL",
     }
     response = client.json.post(url, json.dumps(data))
     assert response.status_code == 201
@@ -3122,7 +3128,7 @@ def test_patch_project_code_superuser_can_clear_it_to_blank(client):
 def test_create_project_as_superuser_succeeds(client):
     user = f.create_user(is_superuser=True)
     url = reverse("projects-list")
-    data = {"name": "admin project", "description": "description"}
+    data = {"name": "admin project", "description": "description", "project_code": "ADM"}
 
     client.login(user)
     response = client.json.post(url, json.dumps(data))
@@ -3131,9 +3137,15 @@ def test_create_project_as_superuser_succeeds(client):
 
 
 def test_create_project_as_regular_authenticated_user_is_forbidden(client):
+    # NOTE: Taiga's CreateModelMixin.create() validates the payload BEFORE
+    # checking create_perms (see taiga/base/api/mixins.py) - an invalid
+    # payload short-circuits to 400 without ever reaching the permission
+    # check. So this must be an otherwise-fully-valid payload (a project
+    # code included) to actually exercise the 403, not a payload that
+    # would fail validation regardless of who's asking.
     user = f.create_user(is_superuser=False)
     url = reverse("projects-list")
-    data = {"name": "regular user project", "description": "description"}
+    data = {"name": "regular user project", "description": "description", "project_code": "REG"}
 
     client.login(user)
     response = client.json.post(url, json.dumps(data))
