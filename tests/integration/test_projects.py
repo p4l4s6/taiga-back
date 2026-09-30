@@ -2934,3 +2934,179 @@ def test_swimlane_userstory_statuses_creation_when_a_new_user_story_status_is_cr
 
     assert swimlane2.statuses.count() == 3
     assert swimlane2.statuses.all()[2].wip_limit is None
+
+
+######################################################
+# project_code (devsstream addition - native task IDs, D24-D29/D33)
+######################################################
+
+def test_project_code_defaults_to_none(client):
+    project = f.create_project()
+    assert project.project_code is None
+
+
+def test_project_code_multiple_blank_projects_do_not_collide():
+    project1 = f.create_project()
+    project2 = f.create_project()
+    assert project1.project_code is None
+    assert project2.project_code is None
+    # No IntegrityError raised above: two rows with a NULL unique field
+    # coexist fine (unlike two rows with an empty-string unique field).
+
+
+def test_get_project_detail_returns_project_code(client):
+    project = f.create_project(project_code="WD")
+    f.MembershipFactory(user=project.owner, project=project, is_admin=True)
+    url = reverse("projects-detail", kwargs={"pk": project.pk})
+
+    client.login(project.owner)
+    response = client.get(url)
+    assert response.status_code == 200
+    assert response.data["project_code"] == "WD"
+
+
+def test_patch_project_code_valid_sets_it(client):
+    project = f.create_project()
+    f.MembershipFactory(user=project.owner, project=project, is_admin=True)
+    url = reverse("projects-detail", kwargs={"pk": project.pk})
+
+    client.login(project.owner)
+    response = client.json.patch(url, json.dumps({"project_code": "WD"}))
+    assert response.status_code == 200
+    assert response.data["project_code"] == "WD"
+
+    project.refresh_from_db()
+    assert project.project_code == "WD"
+
+
+def test_patch_project_code_lowercase_input_is_uppercased(client):
+    project = f.create_project()
+    f.MembershipFactory(user=project.owner, project=project, is_admin=True)
+    url = reverse("projects-detail", kwargs={"pk": project.pk})
+
+    client.login(project.owner)
+    response = client.json.patch(url, json.dumps({"project_code": "wd"}))
+    assert response.status_code == 200
+    assert response.data["project_code"] == "WD"
+
+
+def test_patch_project_code_invalid_format_rejected(client):
+    project = f.create_project()
+    f.MembershipFactory(user=project.owner, project=project, is_admin=True)
+    url = reverse("projects-detail", kwargs={"pk": project.pk})
+
+    client.login(project.owner)
+
+    for bad_code in ["W", "1WD", "WD-1", "wd_1", "A" * 11, "-"]:
+        response = client.json.patch(url, json.dumps({"project_code": bad_code}))
+        assert response.status_code == 400, f"expected 400 for {bad_code!r}, got {response.status_code}"
+        assert "project_code" in response.data
+
+
+def test_patch_project_code_duplicate_rejected(client):
+    other = f.create_project(project_code="WD")
+    project = f.create_project()
+    f.MembershipFactory(user=project.owner, project=project, is_admin=True)
+    url = reverse("projects-detail", kwargs={"pk": project.pk})
+
+    client.login(project.owner)
+    response = client.json.patch(url, json.dumps({"project_code": "WD"}))
+    assert response.status_code == 400
+    assert "project_code" in response.data
+
+    project.refresh_from_db()
+    assert project.project_code is None
+
+
+def test_patch_project_code_immutable_once_set_for_non_superuser(client):
+    project = f.create_project(project_code="WD")
+    f.MembershipFactory(user=project.owner, project=project, is_admin=True)
+    url = reverse("projects-detail", kwargs={"pk": project.pk})
+
+    client.login(project.owner)
+    response = client.json.patch(url, json.dumps({"project_code": "OTHER"}))
+    assert response.status_code == 400
+    assert "project_code" in response.data
+
+    project.refresh_from_db()
+    assert project.project_code == "WD"
+
+
+def test_patch_project_code_resubmitting_same_value_is_a_noop_for_non_superuser(client):
+    project = f.create_project(project_code="WD")
+    f.MembershipFactory(user=project.owner, project=project, is_admin=True)
+    url = reverse("projects-detail", kwargs={"pk": project.pk})
+
+    client.login(project.owner)
+    response = client.json.patch(url, json.dumps({"project_code": "wd"}))
+    assert response.status_code == 200
+    assert response.data["project_code"] == "WD"
+
+
+def test_patch_project_code_superuser_can_change_once_set(client):
+    project = f.create_project(project_code="WD")
+    admin = f.UserFactory.create(is_superuser=True)
+    url = reverse("projects-detail", kwargs={"pk": project.pk})
+
+    client.login(admin)
+    response = client.json.patch(url, json.dumps({"project_code": "NEWCODE"}))
+    assert response.status_code == 200
+    assert response.data["project_code"] == "NEWCODE"
+
+    project.refresh_from_db()
+    assert project.project_code == "NEWCODE"
+
+
+def test_duplicate_project_gets_blank_project_code(client):
+    user = f.UserFactory.create()
+    project = f.ProjectFactory.create(owner=user, project_code="WD")
+    project.default_epic_status = f.EpicStatusFactory.create(project=project)
+    project.default_us_status = f.UserStoryStatusFactory.create(project=project)
+    project.default_task_status = f.TaskStatusFactory.create(project=project)
+    project.default_issue_status = f.IssueStatusFactory.create(project=project)
+    project.default_points = f.PointsFactory.create(project=project)
+    project.default_issue_type = f.IssueTypeFactory.create(project=project)
+    project.default_priority = f.PriorityFactory.create(project=project)
+    project.default_severity = f.SeverityFactory.create(project=project)
+    project.save()
+
+    role = f.RoleFactory.create(project=project, permissions=["view_project"])
+    f.MembershipFactory.create(project=project, user=user, role=role, is_admin=True)
+
+    url = reverse("projects-duplicate", args=(project.id,))
+    data = {
+        "name": "duplicated project",
+        "description": "description",
+        "is_private": True,
+        "users": [],
+    }
+
+    client.login(user)
+    response = client.json.post(url, json.dumps(data))
+    assert response.status_code == 201
+    assert response.data["project_code"] is None
+
+    new_project = Project.objects.get(id=response.data["id"])
+    assert new_project.project_code is None
+    # The original project keeps its own code untouched.
+    project.refresh_from_db()
+    assert project.project_code == "WD"
+
+
+def test_patch_project_code_superuser_can_clear_it_to_blank(client):
+    project = f.create_project(project_code="WD")
+    admin = f.UserFactory.create(is_superuser=True)
+    url = reverse("projects-detail", kwargs={"pk": project.pk})
+
+    client.login(admin)
+    response = client.json.patch(url, json.dumps({"project_code": ""}))
+    assert response.status_code == 200
+    assert response.data["project_code"] is None
+
+    project.refresh_from_db()
+    assert project.project_code is None
+
+    # A second project can now take a blank code too without colliding
+    # (must be stored as NULL, not "").
+    other_project = f.create_project()
+    assert other_project.project_code is None
