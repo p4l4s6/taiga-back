@@ -172,6 +172,11 @@ def test_project_update(client, data):
 
 
 def test_project_delete(client, data):
+    # devsstream addition: only a site superuser can delete a project now,
+    # not a project-level admin/owner role - data.project_owner here is
+    # admin *on the project* (is_admin=True membership) but is_superuser
+    # is False, so it must now get 403 same as any other non-admin user.
+    # Only data.superuser (is_superuser=True) may delete.
     url = reverse('projects-detail', kwargs={"pk": data.private_project2.pk})
     blocked_url = reverse('projects-detail', kwargs={"pk": data.blocked_project.pk})
 
@@ -179,13 +184,14 @@ def test_project_delete(client, data):
         None,
         data.registered_user,
         data.project_member_with_perms,
-        data.project_owner
+        data.project_owner,
+        data.superuser,
     ]
     results = helper_test_http_method(client, 'delete', url, None, users)
-    assert results == [401, 403, 403, 204]
+    assert results == [401, 403, 403, 403, 204]
 
     results = helper_test_http_method(client, 'delete', blocked_url, None, users)
-    assert results == [401, 403, 403, 451]
+    assert results == [401, 403, 403, 403, 451]
 
 
 def test_project_list(client, data):

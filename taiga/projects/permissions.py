@@ -47,7 +47,9 @@ class ProjectPermission(TaigaResourcePermission):
     create_perms = IsSuperUser()
     update_perms = IsProjectAdmin()
     partial_update_perms = IsProjectAdmin()
-    destroy_perms = IsProjectAdmin()
+    # devsstream addition: deleting a project is restricted to site admins
+    # (superusers), not just the project's own admin/owner role.
+    destroy_perms = IsSuperUser()
     modules_perms = IsProjectAdmin()
     list_perms = AllowAny()
     change_logo_perms = IsProjectAdmin()

@@ -1883,7 +1883,8 @@ def test_public_project_when_project_has_unlimited_members(client):
 
 def test_delete_project_with_celery_enabled(client, settings):
     settings.CELERY_ENABLED = True
-    user = f.UserFactory.create()
+    # devsstream addition: only site superusers can delete a project now.
+    user = f.UserFactory.create(is_superuser=True)
     project = f.ProjectFactory.create(owner=user)
     role = f.RoleFactory.create(project=project, permissions=["view_project"])
     membership = f.MembershipFactory.create(project=project, user=user, role=role, is_admin=True)
@@ -1903,7 +1904,8 @@ def test_delete_project_with_celery_enabled(client, settings):
 
 
 def test_delete_project_with_celery_disabled(client, settings):
-    user = f.UserFactory.create()
+    # devsstream addition: only site superusers can delete a project now.
+    user = f.UserFactory.create(is_superuser=True)
     project = f.ProjectFactory.create(owner=user)
     role = f.RoleFactory.create(project=project, permissions=["view_project"])
     membership = f.MembershipFactory.create(project=project, user=user, role=role, is_admin=True)
@@ -3138,3 +3140,35 @@ def test_create_project_as_regular_authenticated_user_is_forbidden(client):
 
     assert response.status_code == 403
     assert Project.objects.filter(name="regular user project").count() == 0
+
+
+######################################################
+# admin-only project deletion (devsstream addition)
+######################################################
+
+def test_delete_project_as_superuser_succeeds(client):
+    project = f.create_project()
+    admin = f.UserFactory.create(is_superuser=True)
+    url = reverse("projects-detail", kwargs={"pk": project.pk})
+
+    client.login(admin)
+    response = client.json.delete(url)
+    assert response.status_code == 204
+    assert Project.objects.filter(id=project.id).count() == 0
+
+
+def test_delete_project_as_project_admin_who_is_not_superuser_is_forbidden(client):
+    # A user with an is_admin=True membership on the project (a
+    # project-level "admin" role) must NOT be able to delete it unless
+    # they are also a site superuser - this is the distinction the
+    # devsstream policy change is about.
+    project = f.create_project()
+    project_admin = f.UserFactory.create(is_superuser=False)
+    role = f.RoleFactory.create(project=project, permissions=["view_project"])
+    f.MembershipFactory.create(project=project, user=project_admin, role=role, is_admin=True)
+    url = reverse("projects-detail", kwargs={"pk": project.pk})
+
+    client.login(project_admin)
+    response = client.json.delete(url)
+    assert response.status_code == 403
+    assert Project.objects.filter(id=project.id).count() == 1
