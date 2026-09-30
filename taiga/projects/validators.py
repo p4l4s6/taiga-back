@@ -309,15 +309,13 @@ class ProjectValidator(validators.ModelValidator):
             constraint is the ultimate backstop, this gives a friendly 400);
           - enforce immutability once a non-blank code has been set: only a
             request from a superuser may change (or clear) it;
-          - enforce D45 ("required for new projects") on CREATE only: a
-            blank code is rejected when there is no existing instance yet
-            (self.object is None, the create-vs-update signal this
-            ModelValidator/ModelSerializer base already exposes - see e.g.
-            MembersBulkValidator/notifications validators in this same
-            module for the same self.object is None idiom). UPDATE keeps
-            accepting blank so projects that predate this rule (D33
-            duplicates/imports, or anything not yet backfilled) stay
-            editable without being forced to retroactively set a code.
+          - D45 ("required for new projects") is TEMPORARILY NOT ENFORCED:
+            the stock taiga-front "New Project" wizard has no field to
+            enter a code, so making it mandatory before the Phase 5
+            frontend patch ships blocks project creation entirely via the
+            UI (including for admins). Re-enable the self.object is None
+            check below once Phase 5 lands and is verified. Tracked
+            alongside Phase 5's own work, not a separate decision.
         """
         value = attrs.get(source, None)
         if value:
@@ -327,9 +325,8 @@ class ProjectValidator(validators.ModelValidator):
         attrs[source] = value
 
         if value is None:
-            if self.object is None:
-                raise ValidationError(_("Project code is required"))
-            # Blank/unset is allowed on UPDATE - see D45 note above.
+            # See note above: create-time requirement is paused until the
+            # frontend has a field for it.
             return attrs
 
         if not PROJECT_CODE_RE.match(value):
