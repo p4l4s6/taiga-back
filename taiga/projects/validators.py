@@ -5,6 +5,8 @@
 #
 # Copyright (c) 2021-present Kaleidos INC
 
+import re
+
 from django.db.models import Q
 from django.utils.translation import gettext as _
 
@@ -281,6 +283,12 @@ class MembersBulkValidator(ProjectExistsValidator, validators.Validator):
 # Projects
 ######################################################
 
+# devsstream addition: format for the native project-code task IDs (e.g.
+# "WD" in "WD-12"). See devsstream-infra PLAN.md ADDENDUM D28: 2-10 chars,
+# uppercase, must start with a letter.
+PROJECT_CODE_RE = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
+
+
 class ProjectValidator(validators.ModelValidator):
     anon_permissions = PgArrayField(required=False)
     public_permissions = PgArrayField(required=False)
@@ -289,6 +297,57 @@ class ProjectValidator(validators.ModelValidator):
     class Meta:
         model = models.Project
         read_only_fields = ("created_date", "modified_date", "slug", "blocked_code", "owner")
+
+    def validate_project_code(self, attrs, source):
+        """
+        devsstream addition (D28/D29/D33):
+          - uppercase-normalize on input, treating blank as unset (None) so
+            multiple projects without a code never collide on the unique
+            constraint;
+          - enforce the 2-10 char/format rule;
+          - enforce uniqueness with a clear error message (the DB unique
+            constraint is the ultimate backstop, this gives a friendly 400);
+          - enforce immutability once a non-blank code has been set: only a
+            request from a superuser may change (or clear) it.
+        """
+        value = attrs.get(source, None)
+        if value:
+            value = value.strip().upper()
+        else:
+            value = None
+        attrs[source] = value
+
+        if value is None:
+            # Blank/unset is always allowed at the validator level - D29
+            # ("required for new projects") is enforced client-side; the
+            # backend must accept blank so duplicated/imported projects
+            # (D33) and not-yet-migrated projects keep working.
+            return attrs
+
+        if not PROJECT_CODE_RE.match(value):
+            raise ValidationError(
+                _("Project code must be 2-10 characters, start with a "
+                  "letter, and contain only uppercase letters and "
+                  "numbers (A-Z, 0-9)."))
+
+        qs = models.Project.objects.filter(project_code=value)
+        if self.object is not None:
+            qs = qs.exclude(id=self.object.id)
+        if qs.exists():
+            raise ValidationError(
+                _("This project code is already in use by another "
+                  "project. Project codes must be unique."))
+
+        current_value = getattr(self.object, "project_code", None) if self.object is not None else None
+        if current_value and current_value != value:
+            request = self.context.get("request", None) if hasattr(self, "context") else None
+            user = getattr(request, "user", None)
+            if not (user is not None and getattr(user, "is_superuser", False)):
+                raise ValidationError(
+                    _("Project code cannot be changed once set. Only a "
+                      "superuser can change it."))
+
+        return attrs
 
 
 ######################################################
