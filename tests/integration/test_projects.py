@@ -3136,6 +3136,22 @@ def test_create_project_as_superuser_succeeds(client):
     assert response.status_code == 201
 
 
+def test_create_project_without_code_temporarily_still_succeeds(client):
+    # D45's "required at creation" is paused (see validators.py's
+    # validate_project_code docstring) until the Phase 5 frontend has a
+    # field for it - blank must keep working in the meantime so the stock
+    # "New Project" wizard isn't broken for admins.
+    user = f.create_user(is_superuser=True)
+    url = reverse("projects-list")
+    data = {"name": "no code project", "description": "description"}
+
+    client.login(user)
+    response = client.json.post(url, json.dumps(data))
+
+    assert response.status_code == 201
+    assert response.data["project_code"] is None
+
+
 def test_create_project_as_regular_authenticated_user_is_forbidden(client):
     # NOTE: Taiga's CreateModelMixin.create() validates the payload BEFORE
     # checking create_perms (see taiga/base/api/mixins.py) - an invalid
