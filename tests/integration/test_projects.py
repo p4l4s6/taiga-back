@@ -93,9 +93,11 @@ def test_get_private_project_by_slug(client):
 
 
 def test_create_project(client):
-    user = f.create_user()
+    # devsstream addition: project creation is admin-only, and project_code
+    # is required at creation now.
+    user = f.create_user(is_superuser=True)
     url = reverse("projects-list")
-    data = {"name": "project name", "description": "project description"}
+    data = {"name": "project name", "description": "project description", "project_code": "PRJ"}
 
     client.login(user)
     response = client.json.post(url, json.dumps(data))
@@ -104,12 +106,13 @@ def test_create_project(client):
 
 
 def test_create_private_project_without_enough_private_projects_slots(client):
-    user = f.create_user(max_private_projects=0)
+    user = f.create_user(max_private_projects=0, is_superuser=True)
     url = reverse("projects-list")
     data = {
         "name": "project name",
         "description": "project description",
-        "is_private": True
+        "is_private": True,
+        "project_code": "PRJ",
     }
 
     client.login(user)
@@ -122,12 +125,13 @@ def test_create_private_project_without_enough_private_projects_slots(client):
 
 
 def test_create_public_project_without_enough_public_projects_slots(client):
-    user = f.create_user(max_public_projects=0)
+    user = f.create_user(max_public_projects=0, is_superuser=True)
     url = reverse("projects-list")
     data = {
         "name": "project name",
         "description": "project description",
-        "is_private": False
+        "is_private": False,
+        "project_code": "PRJ",
     }
 
     client.login(user)
@@ -176,12 +180,13 @@ def test_change_project_from_public_to_private_without_enough_private_projects_s
 
 
 def test_create_private_project_with_enough_private_projects_slots(client):
-    user = f.create_user(max_private_projects=1)
+    user = f.create_user(max_private_projects=1, is_superuser=True)
     url = reverse("projects-list")
     data = {
         "name": "project name",
         "description": "project description",
-        "is_private": True
+        "is_private": True,
+        "project_code": "PRJ",
     }
 
     client.login(user)
@@ -191,12 +196,13 @@ def test_create_private_project_with_enough_private_projects_slots(client):
 
 
 def test_create_public_project_with_enough_public_projects_slots(client):
-    user = f.create_user(max_public_projects=1)
+    user = f.create_user(max_public_projects=1, is_superuser=True)
     url = reverse("projects-list")
     data = {
         "name": "project name",
         "description": "project description",
-        "is_private": False
+        "is_private": False,
+        "project_code": "PRJ",
     }
 
     client.login(user)
@@ -622,6 +628,7 @@ def test_create_and_use_template(client):
         "name": "test project based on template",
         "description": "test project based on template",
         "creation_template": template_id,
+        "project_code": "TPL",
     }
     response = client.json.post(url, json.dumps(data))
     assert response.status_code == 201
@@ -1882,7 +1889,8 @@ def test_public_project_when_project_has_unlimited_members(client):
 
 def test_delete_project_with_celery_enabled(client, settings):
     settings.CELERY_ENABLED = True
-    user = f.UserFactory.create()
+    # devsstream addition: only site superusers can delete a project now.
+    user = f.UserFactory.create(is_superuser=True)
     project = f.ProjectFactory.create(owner=user)
     role = f.RoleFactory.create(project=project, permissions=["view_project"])
     membership = f.MembershipFactory.create(project=project, user=user, role=role, is_admin=True)
@@ -1902,7 +1910,8 @@ def test_delete_project_with_celery_enabled(client, settings):
 
 
 def test_delete_project_with_celery_disabled(client, settings):
-    user = f.UserFactory.create()
+    # devsstream addition: only site superusers can delete a project now.
+    user = f.UserFactory.create(is_superuser=True)
     project = f.ProjectFactory.create(owner=user)
     role = f.RoleFactory.create(project=project, permissions=["view_project"])
     membership = f.MembershipFactory.create(project=project, user=user, role=role, is_admin=True)
@@ -3110,3 +3119,68 @@ def test_patch_project_code_superuser_can_clear_it_to_blank(client):
     # (must be stored as NULL, not "").
     other_project = f.create_project()
     assert other_project.project_code is None
+
+
+######################################################
+# admin-only project creation (devsstream addition)
+######################################################
+
+def test_create_project_as_superuser_succeeds(client):
+    user = f.create_user(is_superuser=True)
+    url = reverse("projects-list")
+    data = {"name": "admin project", "description": "description", "project_code": "ADM"}
+
+    client.login(user)
+    response = client.json.post(url, json.dumps(data))
+
+    assert response.status_code == 201
+
+
+def test_create_project_as_regular_authenticated_user_is_forbidden(client):
+    # NOTE: Taiga's CreateModelMixin.create() validates the payload BEFORE
+    # checking create_perms (see taiga/base/api/mixins.py) - an invalid
+    # payload short-circuits to 400 without ever reaching the permission
+    # check. So this must be an otherwise-fully-valid payload (a project
+    # code included) to actually exercise the 403, not a payload that
+    # would fail validation regardless of who's asking.
+    user = f.create_user(is_superuser=False)
+    url = reverse("projects-list")
+    data = {"name": "regular user project", "description": "description", "project_code": "REG"}
+
+    client.login(user)
+    response = client.json.post(url, json.dumps(data))
+
+    assert response.status_code == 403
+    assert Project.objects.filter(name="regular user project").count() == 0
+
+
+######################################################
+# admin-only project deletion (devsstream addition)
+######################################################
+
+def test_delete_project_as_superuser_succeeds(client):
+    project = f.create_project()
+    admin = f.UserFactory.create(is_superuser=True)
+    url = reverse("projects-detail", kwargs={"pk": project.pk})
+
+    client.login(admin)
+    response = client.json.delete(url)
+    assert response.status_code == 204
+    assert Project.objects.filter(id=project.id).count() == 0
+
+
+def test_delete_project_as_project_admin_who_is_not_superuser_is_forbidden(client):
+    # A user with an is_admin=True membership on the project (a
+    # project-level "admin" role) must NOT be able to delete it unless
+    # they are also a site superuser - this is the distinction the
+    # devsstream policy change is about.
+    project = f.create_project()
+    project_admin = f.UserFactory.create(is_superuser=False)
+    role = f.RoleFactory.create(project=project, permissions=["view_project"])
+    f.MembershipFactory.create(project=project, user=project_admin, role=role, is_admin=True)
+    url = reverse("projects-detail", kwargs={"pk": project.pk})
+
+    client.login(project_admin)
+    response = client.json.delete(url)
+    assert response.status_code == 403
+    assert Project.objects.filter(id=project.id).count() == 1

@@ -41,10 +41,15 @@ class CanLeaveProject(PermissionComponent):
 class ProjectPermission(TaigaResourcePermission):
     retrieve_perms = HasProjectPerm('view_project')
     by_slug_perms = HasProjectPerm('view_project')
-    create_perms = IsAuthenticated()
+    # devsstream addition: no self-service project creation - only a site
+    # admin (superuser) may create a project. A project-level admin role
+    # doesn't apply here since the project doesn't exist yet.
+    create_perms = IsSuperUser()
     update_perms = IsProjectAdmin()
     partial_update_perms = IsProjectAdmin()
-    destroy_perms = IsProjectAdmin()
+    # devsstream addition: deleting a project is restricted to site admins
+    # (superusers), not just the project's own admin/owner role.
+    destroy_perms = IsSuperUser()
     modules_perms = IsProjectAdmin()
     list_perms = AllowAny()
     change_logo_perms = IsProjectAdmin()
@@ -77,6 +82,16 @@ class ProjectPermission(TaigaResourcePermission):
     edit_tag_perms = IsProjectAdmin()
     delete_tag_perms = IsProjectAdmin()
     mix_tags_perms = IsProjectAdmin()
+    # devsstream note: duplicate technically creates a new Project row, but
+    # it operates on an existing project the requester can already view
+    # (the actual gate here is view_project, weaker than "admin rights on
+    # the source project" one might assume - flagged in the rollout
+    # report). Left unrestricted to superuser deliberately: it's a bounded
+    # "copy something I can already see" action, distinct from open-ended
+    # project creation, and existing tests
+    # (test_duplicate_project_gets_blank_project_code) encode a regular
+    # project-admin successfully duplicating their own project as expected
+    # behavior. Revisit if the "admins only" policy should extend here too.
     duplicate_perms = IsAuthenticated() & HasProjectPerm('view_project')
 
 

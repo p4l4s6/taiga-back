@@ -300,7 +300,7 @@ class ProjectValidator(validators.ModelValidator):
 
     def validate_project_code(self, attrs, source):
         """
-        devsstream addition (D28/D29/D33):
+        devsstream addition (D28/D29/D33/D45):
           - uppercase-normalize on input, treating blank as unset (None) so
             multiple projects without a code never collide on the unique
             constraint;
@@ -308,7 +308,16 @@ class ProjectValidator(validators.ModelValidator):
           - enforce uniqueness with a clear error message (the DB unique
             constraint is the ultimate backstop, this gives a friendly 400);
           - enforce immutability once a non-blank code has been set: only a
-            request from a superuser may change (or clear) it.
+            request from a superuser may change (or clear) it;
+          - enforce D45 ("required for new projects") on CREATE only: a
+            blank code is rejected when there is no existing instance yet
+            (self.object is None, the create-vs-update signal this
+            ModelValidator/ModelSerializer base already exposes - see e.g.
+            MembersBulkValidator/notifications validators in this same
+            module for the same self.object is None idiom). UPDATE keeps
+            accepting blank so projects that predate this rule (D33
+            duplicates/imports, or anything not yet backfilled) stay
+            editable without being forced to retroactively set a code.
         """
         value = attrs.get(source, None)
         if value:
@@ -318,10 +327,9 @@ class ProjectValidator(validators.ModelValidator):
         attrs[source] = value
 
         if value is None:
-            # Blank/unset is always allowed at the validator level - D29
-            # ("required for new projects") is enforced client-side; the
-            # backend must accept blank so duplicated/imported projects
-            # (D33) and not-yet-migrated projects keep working.
+            if self.object is None:
+                raise ValidationError(_("Project code is required"))
+            # Blank/unset is allowed on UPDATE - see D45 note above.
             return attrs
 
         if not PROJECT_CODE_RE.match(value):
