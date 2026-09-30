@@ -66,10 +66,10 @@ class MembershipInline(admin.TabularInline):
 
 class ProjectAdmin(admin.ModelAdmin):
     list_display = ["id", "name", "slug", "is_private","owner_url",
-                    "blocked_code", "is_featured", "created_date"]
+                    "blocked_code", "project_code", "is_featured", "created_date"]
     list_display_links = ["id", "name", "slug"]
     list_filter = ("is_private", "blocked_code", "is_featured", "created_date")
-    list_editable = ["is_featured", "blocked_code"]
+    list_editable = ["is_featured", "blocked_code", "project_code"]
     search_fields = ["id", "name", "slug", "owner__username", "owner__email", "owner__full_name"]
     inlines = [RoleInline,
                MembershipInline,
@@ -91,6 +91,9 @@ class ProjectAdmin(admin.ModelAdmin):
                        "is_private",
                        ("anon_permissions", "public_permissions"),
                        "transfer_token")
+        }),
+        (_("Native task ID"), {
+            "fields": ("project_code",),
         }),
         (_("Extra info"), {
             "classes": ("collapse",),

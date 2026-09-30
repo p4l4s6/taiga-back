@@ -452,6 +452,7 @@ class ProjectExportSerializer(WatcheableObjectLightSerializerMixin):
     issues_csv_uuid = Field()
     transfer_token = Field()
     blocked_code = Field()
+    project_code = Field()
     totals_updated_datetime = DateTimeField()
     total_fans = Field()
     total_fans_last_week = Field()
