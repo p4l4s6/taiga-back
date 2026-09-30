@@ -20,7 +20,7 @@ from django.template.defaultfilters import slugify
 from django.utils.translation import gettext as _
 
 from taiga.projects.history.services import make_key_from_model_object, take_snapshot
-from taiga.projects.models import Membership
+from taiga.projects.models import Membership, Project
 from taiga.projects.references import sequences as seq
 from taiga.projects.references import models as refs
 from taiga.projects.userstories.models import RolePoints
@@ -87,6 +87,26 @@ def store_project(data):
         ]
         if key not in excluded_fields:
             project_data[key] = value
+
+    # devsstream addition (D33): a project_code clash on import gets the
+    # imported project a blank code (admin sets one afterwards) instead of
+    # failing the whole import - matches the D33 rule for duplicated
+    # projects. Also uppercase-normalizes, same as the live API validator,
+    # in case the export file was hand-edited.
+    #
+    # NB: the generic CharField used by ProjectExportValidator coerces a
+    # submitted None/"" into "" (see taiga/base/api/fields.py CharField.
+    # from_native, EMPTY_VALUES -> ""), and "" is not NULL for a unique
+    # column - two blanked imports would collide. So when the code must be
+    # blanked, the key is popped entirely rather than set to None, letting
+    # the model field's own default (None) apply on creation.
+    code = project_data.get("project_code")
+    if code:
+        code = code.strip().upper()
+        if Project.objects.filter(project_code=code).exists():
+            project_data.pop("project_code", None)
+        else:
+            project_data["project_code"] = code
 
     validator = validators.ProjectExportValidator(data=project_data)
     if validator.is_valid():
