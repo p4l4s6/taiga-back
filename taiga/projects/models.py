@@ -250,6 +250,12 @@ class Project(ProjectDefaults, TaggedMixin, TagsColorsMixin, models.Model):
     blocked_code = models.CharField(null=True, blank=True, max_length=255,
                                     choices=choices.BLOCKING_CODES + settings.EXTRA_BLOCKING_CODES,
                                     default=None, verbose_name=_("blocked code"))
+
+    # devsstream addition: short, unique, immutable-once-set project code used
+    # to build native task IDs (e.g. "WD-12"). See devsstream-infra PLAN.md
+    # ADDENDUM D24-D29/D33.
+    project_code = models.CharField(max_length=10, blank=True, null=True,
+                                    unique=True, verbose_name=_("project code"))
     # Totals:
     totals_updated_datetime = models.DateTimeField(null=False, blank=False, auto_now_add=True,
                                                    verbose_name=_("updated date time"), db_index=True)
