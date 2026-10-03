@@ -298,6 +298,12 @@ class ProjectValidator(validators.ModelValidator):
         model = models.Project
         read_only_fields = ("created_date", "modified_date", "slug", "blocked_code", "owner")
 
+    def validate_is_private(self, attrs, source):
+        # devsstream addition: public projects disabled instance-wide. Force
+        # private regardless of what's submitted, on create and update alike.
+        attrs[source] = True
+        return attrs
+
     def validate_project_code(self, attrs, source):
         """
         devsstream addition (D28/D29/D33/D45):
@@ -325,8 +331,8 @@ class ProjectValidator(validators.ModelValidator):
         attrs[source] = value
 
         if value is None:
-            # See note above: create-time requirement is paused until the
-            # frontend has a field for it.
+            if self.object is None:
+                raise ValidationError(_("Project code is required."))
             return attrs
 
         if not PROJECT_CODE_RE.match(value):
@@ -398,3 +404,7 @@ class DuplicateProjectValidator(validators.Validator):
     description = serializers.CharField()
     is_private = serializers.BooleanField()
     users = DuplicateProjectMemberValidator(many=True)
+
+    def validate_is_private(self, attrs, source):
+        attrs[source] = True
+        return attrs
